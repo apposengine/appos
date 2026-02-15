@@ -3,12 +3,13 @@
 **Python Low-Code Platform — Quick Reference for Developers, AI Assistants, and Architects**
 
 *Version 2.1 | February 2026*
+*Contact* - apposengine@gmail.com
 
 ---
 
 ## Core Philosophy
 
-**AppOS accelerates Python development by 50%+ through organized structure, zero-import architecture, and AI-native observability. It's not a new language — it's Python with guardrails.**
+**AppOS accelerates Python development by 50%+ through organized structure, zero-import architecture, and AI-native observability. It's not a new language — it's Python with guardrails and wraps reflex dev.**
 
 ### Five Founding Principles
 
