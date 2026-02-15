@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel
 
+from appos.utilities.utils import to_snake
+
 logger = logging.getLogger("appos.generators.audit_generator")
 
 
@@ -52,9 +54,56 @@ class AuditGenerator:
         Discover all @record objects in the app, generate audit log
         tables for those with audit=True.
 
+        Prefers registry-based discovery (objects already scanned at startup).
+        Falls back to AST-based file scanning if registry is empty.
+
         Returns:
             Number of audit tables generated.
         """
+        # Prefer registry-based discovery when objects are registered
+        count = self._generate_from_registry()
+        if count >= 0:
+            return count
+
+        # Fallback: AST-based discovery from source files
+        return self._generate_from_files()
+
+    def _generate_from_registry(self) -> int:
+        """
+        Generate audit tables for @record objects found in the registry.
+
+        Returns:
+            Number generated, or -1 if registry has no record objects for this app
+            (signalling caller should fall back to AST discovery).
+        """
+        from appos.engine.registry import object_registry
+
+        record_objects = object_registry.get_by_type("record", app_name=self.app_name)
+        if not record_objects:
+            return -1  # Signal fallback
+
+        count = 0
+        for reg_obj in record_objects:
+            meta = reg_obj.metadata or {}
+            if not meta.get("audit", False):
+                continue
+
+            record_info = {
+                "name": meta.get("class_name", reg_obj.name),
+                "table_name": meta.get("table_name", to_snake(reg_obj.name) + "s"),
+                "fields": list(meta.get("fields", {}).keys()) if isinstance(meta.get("fields"), dict) else meta.get("fields", []),
+                "audit": True,
+            }
+            try:
+                self._generate_audit_model(record_info)
+                count += 1
+            except Exception as e:
+                logger.warning(f"Failed to generate audit for {reg_obj.object_ref}: {e}")
+
+        return count
+
+    def _generate_from_files(self) -> int:
+        """Fallback: discover records via AST parsing of source files."""
         from appos.generators.model_generator import parse_record
 
         records_dir = self.app_dir / "records"
@@ -107,7 +156,7 @@ class AuditGenerator:
 
             # Look for Meta inner class with audit=True
             audit = False
-            table_name = _to_snake(node.name)
+            table_name = to_snake(node.name)
             for item in node.body:
                 if isinstance(item, ast.ClassDef) and item.name == "Meta":
                     for meta_item in item.body:
@@ -153,7 +202,7 @@ class AuditGenerator:
         table_name = record["table_name"]
         audit_table = f"{self.app_name}_{table_name}_audit_log"
 
-        snake_name = _to_snake(record_name)
+        snake_name = to_snake(record_name)
         class_name = f"{record_name}AuditLog"
 
         code = textwrap.dedent(f'''\
@@ -249,8 +298,4 @@ class AuditGenerator:
         return sql_path
 
 
-def _to_snake(name: str) -> str:
-    """Convert CamelCase to snake_case."""
-    import re
-    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+

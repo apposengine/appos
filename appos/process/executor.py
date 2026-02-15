@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from celery import Celery, group as celery_group
+from celery import Celery, chord as celery_chord, group as celery_group
 
 logger = logging.getLogger("appos.process.executor")
 
@@ -304,12 +304,18 @@ class ProcessExecutor:
                     )
                 )
             if tasks:
-                job = celery_group(tasks)
-                result = job.apply_async()
-                # After parallel completes, trigger next step
-                # Note: In production, use chord() for callback after group
+                # Use chord() to trigger next step after all parallel tasks complete
+                next_index = step_index + 1
+                callback = _advance_process_step.si(
+                    instance_id=instance_id,
+                    process_ref=process_ref,
+                    steps=steps,
+                    next_step_index=next_index,
+                )
+                job = celery_chord(celery_group(tasks), callback)
+                job.apply_async()
                 logger.info(
-                    f"Dispatched parallel group ({len(tasks)} tasks) "
+                    f"Dispatched parallel chord ({len(tasks)} tasks + callback) "
                     f"for instance {instance_id}"
                 )
         else:
@@ -798,6 +804,30 @@ def start_process_task(
         user_id=user_id,
         async_execution=True,
     )
+
+
+@celery_app.task(name="appos.process.executor.advance_process_step")
+def _advance_process_step(
+    results: Any,
+    instance_id: str,
+    process_ref: str,
+    steps: List[Dict[str, Any]],
+    next_step_index: int,
+) -> Dict[str, Any]:
+    """
+    Celery chord callback: advance to next step after parallel group completes.
+
+    Called automatically by chord() when all parallel tasks finish.
+    Triggers the next sequential step or completes the process.
+    """
+    executor = get_process_executor()
+
+    if next_step_index >= len(steps):
+        executor._complete_process(instance_id)
+        return {"status": "completed", "instance_id": instance_id}
+
+    executor._dispatch_step_async(instance_id, process_ref, steps, next_step_index)
+    return {"status": "advancing", "next_step": next_step_index}
 
 
 # ---------------------------------------------------------------------------

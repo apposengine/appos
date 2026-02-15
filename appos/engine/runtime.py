@@ -107,6 +107,10 @@ class CentralizedRuntime:
         self.rate_limiter: Optional[RedisCache] = None
         self.retention_manager: Optional[LogRetentionManager] = None
         self.integration_executor = None  # IntegrationExecutor — set in startup()
+        self.api_executor = None          # APIExecutor — set in startup()
+        self.health_service = None        # HealthCheckService — set in startup()
+        self.credential_manager = None    # CredentialManager — set in startup()
+        self.environment_resolver = None  # EnvironmentResolver — set in startup()
 
         self._started = False
 
@@ -161,13 +165,34 @@ class CentralizedRuntime:
         # 6. Log retention
         self.retention_manager = LogRetentionManager(log_dir=self._log_dir)
 
-        # 7. Integration executor (outbound HTTP via httpx)
+        # 7. Credential manager (Fernet-encrypted credential store)
+        from appos.engine.credentials import CredentialManager
+        self.credential_manager = CredentialManager(
+            db_session_factory=self._db_session_factory,
+        )
+
+        # 8. Environment resolver
+        from appos.engine.environment import EnvironmentResolver
+        self.environment_resolver = EnvironmentResolver()
+
+        # 9. Integration executor (outbound HTTP via httpx)
         from appos.engine.integration_executor import IntegrationExecutor
         self.integration_executor = IntegrationExecutor(
             registry=self.registry,
             db_session_factory=self._db_session_factory,
             log_queue=self.log_queue,
+            credential_manager=self.credential_manager,
+            environment_resolver=self.environment_resolver,
         )
+
+        # 10. API executor (inbound HTTP pipeline)
+        from appos.engine.api_executor import APIExecutor
+        self.api_executor = APIExecutor(runtime=self)
+
+        # 11. Health check service
+        from appos.engine.health import HealthCheckService
+        self.health_service = HealthCheckService()
+        self._register_health_checks()
 
         self._started = True
         log(log_system_event("platform_started", details={"subsystems": self._subsystem_status()}))
@@ -326,8 +351,7 @@ class CentralizedRuntime:
 
         from appos.engine.context import RuleContext
 
-        ctx = get_execution_context()
-        rule_ctx = RuleContext(inputs=inputs, execution_context=ctx)
+        rule_ctx = RuleContext(inputs=inputs)
         return handler(rule_ctx)
 
     def _start_process(self, resolved: Any, inputs: Dict[str, Any], **kwargs: Any) -> Any:
@@ -486,65 +510,28 @@ class CentralizedRuntime:
         """
         Delete log files older than their retention period.
 
+        Delegates to LogRetentionManager which handles deletion and compression.
         Runs nightly via the cleanup_schedule cron or manually from admin.
-        Reads retention settings from appos.yaml logging section.
 
-        Returns dict of {category: files_deleted}.
+        Returns dict with {"deleted": N, "compressed": M}.
         """
-        import os
-        from datetime import datetime, timedelta, timezone
-        from pathlib import Path
-
-        log_root = Path(self._log_dir)
-        if not log_root.exists():
+        if self.retention_manager is None:
+            logger.warning("Retention manager not initialized — skipping cleanup")
             return {}
 
-        # Default retention (days)
-        retention = {
-            "execution": 90,
-            "performance": 30,
-            "security": 365,
-        }
+        # Apply config overrides if provided
         if config:
             ret_cfg = getattr(config, "logging", None)
             if ret_cfg:
                 r = getattr(ret_cfg, "retention", None)
                 if r:
-                    retention["execution"] = getattr(r, "execution_days", 90)
-                    retention["performance"] = getattr(r, "performance_days", 30)
-                    retention["security"] = getattr(r, "security_days", 365)
+                    self.retention_manager._retention["execution"] = getattr(r, "execution_days", 90)
+                    self.retention_manager._retention["performance"] = getattr(r, "performance_days", 30)
+                    self.retention_manager._retention["security"] = getattr(r, "security_days", 365)
 
-        now = datetime.now(timezone.utc)
-        deleted: Dict[str, int] = {}
-
-        for type_dir in log_root.iterdir():
-            if not type_dir.is_dir():
-                continue
-            for cat_dir in type_dir.iterdir():
-                if not cat_dir.is_dir():
-                    continue
-                category = cat_dir.name
-                max_age_days = retention.get(category, 90)
-                cutoff = now - timedelta(days=max_age_days)
-                count = 0
-                for jsonl_file in cat_dir.glob("*.jsonl"):
-                    # Parse date from filename (e.g., 2026-02-07.jsonl)
-                    try:
-                        date_str = jsonl_file.stem
-                        file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(
-                            tzinfo=timezone.utc
-                        )
-                        if file_date < cutoff:
-                            jsonl_file.unlink()
-                            count += 1
-                    except (ValueError, OSError):
-                        continue
-                if count:
-                    key = f"{type_dir.name}/{category}"
-                    deleted[key] = count
-
-        logger.info(f"Log cleanup: deleted {sum(deleted.values())} files")
-        return deleted
+        result = self.retention_manager.cleanup()
+        logger.info(f"Log cleanup: {result}")
+        return result
 
     # -----------------------------------------------------------------------
     # ProcessInstance Partitioning (6.26)
@@ -723,6 +710,18 @@ class CentralizedRuntime:
                     "data": self.dependency_graph.impact_analysis(object_ref),
                 }
 
+        if "security" in q or "violations" in q or "permissions" in q:
+            return {
+                "type": "security_status",
+                "data": self._security_status(),
+            }
+
+        if "performance" in q or "latency" in q or "slow" in q:
+            return {
+                "type": "performance_analysis",
+                "data": self._performance_status(),
+            }
+
         if "stats" in q or "status" in q:
             return {
                 "type": "runtime_status",
@@ -731,7 +730,7 @@ class CentralizedRuntime:
 
         return {
             "type": "unknown",
-            "message": "Could not understand query. Try: dependencies, impact analysis, or stats.",
+            "message": "Could not understand query. Try: dependencies, impact analysis, security, performance, or stats.",
         }
 
     @staticmethod
@@ -757,6 +756,11 @@ class CentralizedRuntime:
             "permission_cache": self.permission_cache is not None,
             "session_store": self.session_store is not None,
             "object_cache": self.object_cache is not None,
+            "api_executor": self.api_executor is not None,
+            "integration_executor": self.integration_executor is not None,
+            "credential_manager": self.credential_manager is not None,
+            "environment_resolver": self.environment_resolver is not None,
+            "health_service": self.health_service is not None,
         }
 
         if self.dependency_graph:
@@ -769,6 +773,70 @@ class CentralizedRuntime:
             }
 
         return status
+
+    def _register_health_checks(self) -> None:
+        """Register default health checks for core subsystems."""
+        if self.health_service is None:
+            return
+
+        # Database connectivity
+        if self._db_session_factory:
+            async def check_db() -> dict:
+                try:
+                    from sqlalchemy import text
+                    session = self._db_session_factory()
+                    session.execute(text("SELECT 1"))
+                    session.close()
+                    return {"status": "healthy", "message": "DB connected"}
+                except Exception as e:
+                    return {"status": "unhealthy", "message": str(e)}
+
+            self.health_service.register_check("database", check_db)
+
+        # Redis connectivity
+        if self.permission_cache:
+            async def check_redis() -> dict:
+                try:
+                    self.permission_cache.ping()
+                    return {"status": "healthy", "message": "Redis connected"}
+                except Exception as e:
+                    return {"status": "unhealthy", "message": str(e)}
+
+            self.health_service.register_check("redis", check_redis)
+
+        # Log queue health
+        if self.log_queue:
+            async def check_log_queue() -> dict:
+                pending = self.log_queue.pending_count
+                status = "healthy" if pending < 5000 else "degraded"
+                return {"status": status, "pending": pending}
+
+            self.health_service.register_check("log_queue", check_log_queue)
+
+    def _security_status(self) -> Dict[str, Any]:
+        """Return security-related status information for AI queries."""
+        result: Dict[str, Any] = {
+            "security_policy": self.security is not None,
+            "auth_service": self.auth is not None,
+            "permission_cache": self.permission_cache is not None,
+        }
+        if self.security and hasattr(self.security, "stats"):
+            result["policy_stats"] = self.security.stats()
+        return result
+
+    def _performance_status(self) -> Dict[str, Any]:
+        """Return performance-related status for AI queries."""
+        result: Dict[str, Any] = {}
+        if self.log_queue:
+            result["log_queue"] = {
+                "pending": self.log_queue.pending_count,
+                "dropped": self.log_queue.dropped_count,
+            }
+        if self.object_cache:
+            result["object_cache"] = "active"
+        if self.rate_limiter:
+            result["rate_limiter"] = "active"
+        return result
 
 
 # ---------------------------------------------------------------------------

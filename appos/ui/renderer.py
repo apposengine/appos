@@ -96,16 +96,47 @@ class InterfaceState(rx.State):
 
     def handle_form_submit(self, form_data: dict):
         """
-        Handle form submission — delegates to Record save pipeline.
+        Handle form submission — delegates to RecordFormState save pipeline.
 
         The record name and action are determined from the interface definition
-        stored at render time.
+        stored at render time. Connects InterfaceState (the form UI) to
+        RecordFormState (the save pipeline).
         """
         self.form_data = form_data
         self.form_submitting = True
         self.form_errors = {}
-        # Actual save is wired by InterfaceRenderer via on_submit binding
-        self.form_submitting = False
+
+        try:
+            # Delegate to RecordFormState for the actual save
+            from appos.engine.runtime import get_runtime
+
+            runtime = get_runtime()
+            if runtime is None:
+                self.form_errors = {"_global": "Runtime not available"}
+                self.form_submitting = False
+                return
+
+            # Determine record type from current interface definition
+            record_type = self.current_interface.get("record_type", "") if hasattr(self, "current_interface") else ""
+            record_id = form_data.pop("_record_id", "")
+
+            if record_id:
+                result = runtime.dispatch(
+                    record_type,
+                    action="update",
+                    data={**form_data, "id": record_id},
+                )
+            else:
+                result = runtime.dispatch(
+                    record_type,
+                    action="create",
+                    data=form_data,
+                )
+
+            self.form_submitting = False
+        except Exception as e:
+            self.form_errors = {"_global": str(e)}
+            self.form_submitting = False
 
     def next_wizard_step(self):
         """Move to the next wizard step."""

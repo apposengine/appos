@@ -23,6 +23,8 @@ Design refs: AppOS_Design.md §9 (Generated CRUD Service), §5.7 (Record)
 from __future__ import annotations
 
 import logging
+
+from appos.utilities.utils import to_snake
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -557,11 +559,11 @@ class RecordService:
             return
 
         try:
-            from appos.engine.runtime import CentralizedRuntime
-            # Future: get runtime instance and dispatch
+            from appos.engine.runtime import get_runtime
+            runtime = get_runtime()
             for hook_ref in hooks:
                 logger.debug(f"Firing hook: {hook_ref} for {self.model.__name__} id={instance.id}")
-                # engine.dispatch(hook_ref, {"record_id": instance.id, **data})
+                runtime.dispatch(hook_ref, inputs={"record_id": instance.id, **data})
         except Exception as e:
             logger.warning(f"Hook dispatch failed: {e}")
 
@@ -588,7 +590,7 @@ def generate_service_code(
     """
     model_name = f"{class_name}Model"
     service_name = f"{class_name}Service"
-    model_import = f"from appos.generators.generated.models.{_to_snake(class_name)} import {model_name}"
+    model_import = f"from appos.generators.generated.models.{to_snake(class_name)} import {model_name}"
 
     search_fields_str = repr(search_fields or [])
     on_create_str = repr(on_create or [])
@@ -648,13 +650,6 @@ class {service_name}(RecordService):
     return code
 
 
-def _to_snake(name: str) -> str:
-    """CamelCase → snake_case."""
-    import re
-    s1 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
 def generate_and_write_service(
     record_class: type,
     app_name: str,
@@ -691,7 +686,7 @@ def generate_and_write_service(
         on_delete=parsed.on_delete,
     )
 
-    file_path = os.path.join(output_dir, "services", f"{_to_snake(parsed.class_name)}_service.py")
+    file_path = os.path.join(output_dir, "services", f"{to_snake(parsed.class_name)}_service.py")
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(code)

@@ -43,6 +43,8 @@ def users_page() -> rx.Component:
                                 spacing="3",
                                 width="100%",
                             ),
+                            on_submit=AdminState.create_user,
+                            reset_on_submit=True,
                         ),
                     ),
                 ),
@@ -98,7 +100,13 @@ def _user_row(user: dict) -> rx.Component:
         rx.table.cell(rx.text(user["last_login"], size="1", color="gray")),
         rx.table.cell(
             rx.hstack(
-                rx.button("Edit", size="1", variant="outline"),
+                rx.button(
+                    rx.cond(user["is_active"], "Disable", "Enable"),
+                    size="1",
+                    variant="outline",
+                    color_scheme=rx.cond(user["is_active"], "red", "green"),
+                    on_click=AdminState.toggle_user_active(user["id"]),
+                ),
                 spacing="2",
             ),
         ),

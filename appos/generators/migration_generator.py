@@ -39,9 +39,9 @@ from appos.generators.model_generator import (
     ParsedRecord,
     _get_field_type_name,
     _is_optional,
-    _to_snake,
     parse_record,
 )
+from appos.utilities.utils import to_snake
 
 logger = logging.getLogger("appos.generators.migration_generator")
 
@@ -193,7 +193,7 @@ def _pydantic_field_to_sql_type(parsed_field: ParsedField) -> str:
 
     Uses the same mapping as model_generator but outputs SQL type syntax.
     """
-    type_name = parsed_field.type_name
+    type_name = parsed_field.python_type
 
     sql_type = SQL_TYPE_MAPPING.get(type_name, "TEXT")
 
@@ -224,7 +224,7 @@ def build_desired_table(parsed: ParsedRecord, schema_name: str = "public") -> De
     table = DesiredTable(
         name=table_name,
         schema_name=schema_name,
-        record_ref=f"{parsed.app_name}.records.{parsed.name}" if parsed.app_name else parsed.name,
+        record_ref=f"{parsed.app_name}.records.{parsed.class_name}" if parsed.app_name else parsed.class_name,
     )
 
     # Primary key
@@ -238,13 +238,13 @@ def build_desired_table(parsed: ParsedRecord, schema_name: str = "public") -> De
     # Record fields
     for f in parsed.fields:
         col = DesiredColumn(
-            name=f.column_name,
+            name=f.name,
             sql_type=_pydantic_field_to_sql_type(f),
             is_nullable=f.nullable,
             default=repr(f.default) if f.default is not None else None,
             is_unique=f.unique,
         )
-        table.columns[f.column_name] = col
+        table.columns[f.name] = col
 
     # Audit columns (if AuditMixin)
     if parsed.audit:
@@ -273,7 +273,7 @@ def build_desired_table(parsed: ParsedRecord, schema_name: str = "public") -> De
     # Foreign keys from relationships
     for rel in parsed.relationships:
         if rel.rel_type in ("belongs_to", "has_one"):
-            fk_col = f"{_to_snake(rel.target)}_id"
+            fk_col = f"{to_snake(rel.target)}_id"
             if fk_col not in table.columns:
                 table.columns[fk_col] = DesiredColumn(
                     name=fk_col, sql_type="INTEGER", is_nullable=True,

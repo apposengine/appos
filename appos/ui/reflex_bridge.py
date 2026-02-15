@@ -193,7 +193,8 @@ class AppOSReflexApp:
         """
         page_objects = self._registry.get_by_type("page")
 
-        for ref, page_def in page_objects.items():
+        for page_def in page_objects:
+            ref = page_def.object_ref
             meta = page_def.metadata
             app_name = page_def.app_name
             if not app_name:
@@ -362,7 +363,8 @@ class AppOSReflexApp:
         """
         web_api_objects = self._registry.get_by_type("web_api")
 
-        for ref, api_def in web_api_objects.items():
+        for api_def in web_api_objects:
+            ref = api_def.object_ref
             meta = api_def.metadata
             app_name = api_def.app_name
             if not app_name:

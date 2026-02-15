@@ -204,6 +204,149 @@ class AdminState(rx.State):
         except Exception as e:
             logger.error(f"Failed to load apps: {e}")
 
+    def create_user(self, form_data: dict) -> None:
+        """Create a new user from the admin form."""
+        username = form_data.get("username", "").strip()
+        email = form_data.get("email", "").strip()
+        full_name = form_data.get("full_name", "").strip()
+        password = form_data.get("password", "")
+        user_type = form_data.get("user_type", "basic")
+
+        if not username or not email or not password:
+            return
+
+        try:
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            from appos.db.platform_models import User
+
+            session = runtime._db_session_factory()
+            try:
+                # Hash password via runtime auth if available
+                if hasattr(runtime, "auth") and hasattr(runtime.auth, "hash_password"):
+                    password_hash = runtime.auth.hash_password(password)
+                else:
+                    import hashlib
+                    password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+                user = User(
+                    username=username,
+                    email=email,
+                    full_name=full_name or username,
+                    password_hash=password_hash,
+                    user_type=user_type,
+                    is_active=True,
+                )
+                session.add(user)
+                session.commit()
+            finally:
+                session.close()
+
+            self.load_users()
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+
+    def toggle_user_active(self, user_id: int) -> None:
+        """Toggle a user's is_active flag."""
+        try:
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            from appos.db.platform_models import User
+
+            session = runtime._db_session_factory()
+            try:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    user.is_active = not user.is_active
+                    session.commit()
+            finally:
+                session.close()
+
+            self.load_users()
+        except Exception as e:
+            logger.error(f"Failed to toggle user active: {e}")
+
+    def delete_user(self, user_id: int) -> None:
+        """Soft-delete / deactivate a user."""
+        try:
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            from appos.db.platform_models import User
+
+            session = runtime._db_session_factory()
+            try:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    user.is_active = False
+                    session.commit()
+            finally:
+                session.close()
+
+            self.load_users()
+        except Exception as e:
+            logger.error(f"Failed to delete user: {e}")
+
+    def create_group(self, form_data: dict) -> None:
+        """Create a new group from the admin form."""
+        name = form_data.get("name", "").strip()
+        description = form_data.get("description", "").strip()
+        group_type = form_data.get("type", "security")
+
+        if not name:
+            return
+
+        try:
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            from appos.db.platform_models import Group
+
+            session = runtime._db_session_factory()
+            try:
+                group = Group(
+                    name=name,
+                    description=description or None,
+                    type=group_type,
+                    is_active=True,
+                )
+                session.add(group)
+                session.commit()
+            finally:
+                session.close()
+
+            self.load_groups()
+        except Exception as e:
+            logger.error(f"Failed to create group: {e}")
+
+    def toggle_group_active(self, group_id: int) -> None:
+        """Toggle a group's is_active flag."""
+        try:
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            from appos.db.platform_models import Group
+
+            session = runtime._db_session_factory()
+            try:
+                group = session.query(Group).filter(Group.id == group_id).first()
+                if group:
+                    group.is_active = not group.is_active
+                    session.commit()
+            finally:
+                session.close()
+
+            self.load_groups()
+        except Exception as e:
+            logger.error(f"Failed to toggle group active: {e}")
+
     def create_app(self, form_data: dict) -> None:
         """Create a new app from the registration form."""
         name = form_data.get("name", "").strip()

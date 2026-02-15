@@ -582,7 +582,12 @@ class APIExecutor:
 
         if self._runtime.log_queue:
             from appos.engine.logging import LogEntry
-            self._runtime.log_queue.push(LogEntry(**entry) if hasattr(LogEntry, "__init__") else entry)
+            log_entry = LogEntry(
+                object_type=entry.get("object_type", "web_apis"),
+                category="execution",
+                data=entry,
+            )
+            self._runtime.log_queue.push(log_entry)
 
 
 # ---------------------------------------------------------------------------

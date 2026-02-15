@@ -187,9 +187,8 @@ class ProcessScheduler:
         event_count = 0
         schedule_count = 0
 
-        for obj_ref, registered in object_registry._objects.items():
-            if registered.object_type != "process":
-                continue
+        for registered in object_registry.get_by_type("process"):
+            obj_ref = registered.object_ref
 
             process_count += 1
             meta = registered.metadata or {}

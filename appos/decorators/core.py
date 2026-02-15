@@ -14,10 +14,14 @@ Design refs: AppOS_Design.md §5 Core Object Types
 from __future__ import annotations
 
 import functools
+import hashlib
+import inspect
 import logging
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from appos.engine.registry import RegisteredObject, object_registry
+from appos.utilities.utils import to_snake
 
 logger = logging.getLogger("appos.decorators")
 
@@ -42,11 +46,29 @@ def _register_decorator(
     app_name = _infer_app(module)
     object_ref = f"{app_name}.{_type_to_folder(object_type)}.{name}" if app_name else name
 
+    # Resolve source file path and hash for change detection
+    file_path = ""
+    try:
+        file_path = inspect.getfile(func_or_class)
+    except (TypeError, OSError):
+        pass
+
+    source_hash = ""
+    if file_path:
+        try:
+            source_hash = hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
+        except (OSError, IOError):
+            pass
+
     # Register
     reg = RegisteredObject(
         object_ref=object_ref,
         object_type=object_type,
         app_name=app_name,
+        name=name,
+        module_path=module,
+        file_path=file_path,
+        source_hash=source_hash,
         handler=func_or_class,
         metadata=metadata,
     )
@@ -199,7 +221,7 @@ def record(cls: Optional[type] = None, **kwargs: Any) -> Any:
         meta = getattr(klass, "Meta", None)
         metadata = {
             "name": kwargs.get("name", klass.__name__),
-            "table_name": getattr(meta, "table_name", _to_snake(klass.__name__) + "s"),
+            "table_name": getattr(meta, "table_name", to_snake(klass.__name__) + "s"),
             "audit": getattr(meta, "audit", False),
             "soft_delete": getattr(meta, "soft_delete", False),
             "display_field": getattr(meta, "display_field", None),
@@ -216,13 +238,6 @@ def record(cls: Optional[type] = None, **kwargs: Any) -> Any:
     if cls is not None:
         return decorator(cls)
     return decorator
-
-
-def _to_snake(name: str) -> str:
-    """Convert CamelCase to snake_case."""
-    import re
-    s1 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -596,7 +611,21 @@ def connected_system(
         def wrapper(*args, **kwargs):
             return fn(*args, **kwargs)
 
-        return _register_decorator(wrapper, "connected_system", metadata)
+        result = _register_decorator(wrapper, "connected_system", metadata)
+
+        # Also register with ConnectedSystemManager for lifecycle management
+        try:
+            from appos.decorators.connected_system import get_connected_system_manager
+            manager = get_connected_system_manager()
+            manager.register_from_decorator(
+                name=metadata["name"],
+                config_fn=fn,
+                cs_type=type,
+            )
+        except Exception as e:
+            logger.debug(f"ConnectedSystemManager registration deferred: {e}")
+
+        return result
 
     if func is not None:
         return decorator(func)

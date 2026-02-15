@@ -121,9 +121,10 @@ class EngineRegistry:
     def health_check(self, name: str) -> bool:
         """Check if an engine can connect."""
         try:
+            from sqlalchemy import text
             engine = self.get(name)
             with engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             return True
         except Exception:
             return False

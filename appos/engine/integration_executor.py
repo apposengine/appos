@@ -62,10 +62,14 @@ class ConnectedSystemResolver:
         registry: ObjectRegistryManager,
         db_session_factory=None,
         environment: str = "default",
+        credential_manager=None,
+        environment_resolver=None,
     ):
         self._registry = registry
         self._db_session_factory = db_session_factory
         self._environment = environment
+        self._credential_manager = credential_manager
+        self._environment_resolver = environment_resolver
 
         # Cache resolved configs in memory (per process lifetime)
         self._resolved_cache: Dict[str, Dict[str, Any]] = {}
@@ -135,8 +139,15 @@ class ConnectedSystemResolver:
         """
         Apply environment-specific overrides to connection config.
 
-        Per Design §5.5 — environment_overrides dict merges onto default.
+        Uses EnvironmentResolver when available (preferred), otherwise
+        falls back to manual dict merge per Design §5.5.
         """
+        if self._environment_resolver:
+            try:
+                return self._environment_resolver.resolve_config(raw_config)
+            except Exception as e:
+                logger.warning(f"EnvironmentResolver failed, falling back to manual merge: {e}")
+
         base = dict(raw_config.get("default", raw_config))
         env = self._environment
 
@@ -208,21 +219,27 @@ class ConnectedSystemResolver:
         """
         Retrieve an encrypted credential from the platform DB.
 
-        Full implementation depends on:
-            - Task 2.3: Credential encryption + admin UI
-            - ConnectedSystemCredential DB model
-
-        For now, attempts to read from the connected_system_credential table.
+        Uses CredentialManager when available (preferred) for Fernet-encrypted
+        credential retrieval. Falls back to direct DB lookup.
         """
+        # Preferred: Use CredentialManager for encrypted credential access
+        if self._credential_manager:
+            try:
+                creds = self._credential_manager.get_credentials(cs_name)
+                if creds and credential_key in creds:
+                    return creds[credential_key]
+            except Exception as e:
+                logger.error(f"CredentialManager failed for '{cs_name}': {e}")
+                return None
+
+        # Fallback: Direct DB lookup
         if self._db_session_factory is None:
             return None
 
         try:
             session = self._db_session_factory()
             try:
-                # TODO: Use ConnectedSystemCredential model once Task 2.3 is complete
-                # For now, return None — credentials managed via Admin Console
-                return None
+                return None  # No raw DB path without CredentialManager
             finally:
                 session.close()
         except Exception as e:
@@ -330,12 +347,16 @@ class IntegrationExecutor:
         db_session_factory=None,
         log_queue=None,
         environment: str = "default",
+        credential_manager=None,
+        environment_resolver=None,
     ):
         self._registry = registry
         self._cs_resolver = cs_resolver or ConnectedSystemResolver(
             registry=registry,
             db_session_factory=db_session_factory,
             environment=environment,
+            credential_manager=credential_manager,
+            environment_resolver=environment_resolver,
         )
         self._db_session_factory = db_session_factory
         self._log_queue = log_queue
@@ -738,4 +759,10 @@ class IntegrationExecutor:
             entry["error"] = error
 
         if self._log_queue:
-            self._log_queue.push(entry)
+            from appos.engine.logging import LogEntry
+            log_entry = LogEntry(
+                object_type=entry.get("object_type", "integrations"),
+                category="execution",
+                data=entry,
+            )
+            self._log_queue.push(log_entry)

@@ -115,10 +115,16 @@ class DependencyGraph:
             )
             self._graph.remove_node(object_ref)
             self._dirty.update(neighbors)
-            # Remove JSON file
+            # Remove JSON file and compute old hash for DB tracking
             json_path = self._persistence_dir / f"{object_ref}.json"
+            old_hash: Optional[str] = None
             if json_path.exists():
+                try:
+                    old_hash = hashlib.sha256(json_path.read_bytes()).hexdigest()
+                except OSError:
+                    pass
                 json_path.unlink()
+            self._record_change(object_ref, "removed", old_hash, None)
             return True
         return False
 
@@ -256,7 +262,7 @@ class DependencyGraph:
 
     def persist(self, object_ref: Optional[str] = None) -> int:
         """
-        Write dependency data to JSON files.
+        Write dependency data to JSON files and record changes to DB.
 
         Args:
             object_ref: If given, persist only this object. Otherwise, persist all dirty nodes.
@@ -281,10 +287,32 @@ class DependencyGraph:
                 "last_modified": datetime.now(timezone.utc).isoformat(),
             }
 
+            # Compute content hash for change detection
+            content_bytes = json.dumps(data, sort_keys=True, default=str).encode()
+            new_hash = hashlib.sha256(content_bytes).hexdigest()
+
             file_path = self._persistence_dir / f"{ref}.json"
             file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Determine change type and old hash
+            old_hash: Optional[str] = None
+            change_type: Optional[str] = None
+            if file_path.exists():
+                try:
+                    old_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                except OSError:
+                    old_hash = None
+                if old_hash != new_hash:
+                    change_type = "modified"
+            else:
+                change_type = "added"
+
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
+
+            # Record change to DB
+            if change_type:
+                self._record_change(ref, change_type, old_hash, new_hash, data)
 
             written += 1
 
@@ -353,6 +381,46 @@ class DependencyGraph:
             "cycles": len(self.detect_cycles()),
             "dirty_nodes": len(self._dirty),
         }
+
+    # -----------------------------------------------------------------------
+    # DB Change Tracking
+    # -----------------------------------------------------------------------
+
+    def _record_change(
+        self,
+        object_ref: str,
+        change_type: str,
+        old_hash: Optional[str],
+        new_hash: Optional[str],
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write a row to the dependency_changes table for audit history."""
+        if self._db_session_factory is None:
+            return
+        try:
+            from appos.db.platform_models import DependencyChange
+
+            session = self._db_session_factory()
+            try:
+                record = DependencyChange(
+                    object_ref=object_ref,
+                    change_type=change_type,
+                    old_hash=old_hash,
+                    new_hash=new_hash,
+                    details={
+                        "direct_dependencies": (details or {}).get("direct_dependencies", []),
+                        "dependents": (details or {}).get("dependents", []),
+                    },
+                )
+                session.add(record)
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+        except Exception as exc:
+            logger.warning("Failed to record dependency change for %s: %s", object_ref, exc)
 
     # -----------------------------------------------------------------------
     # Utilities

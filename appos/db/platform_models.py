@@ -324,7 +324,7 @@ class ProcessStepLog(Base):
     __tablename__ = "process_step_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    process_instance_id = Column(Integer, nullable=False, index=True)
+    process_instance_id = Column(Integer, ForeignKey("process_instances.id", ondelete="CASCADE"), nullable=False, index=True)
     step_name = Column(String(100), nullable=False, index=True)
     rule_ref = Column(String(200), nullable=False)
     status = Column(String(30), nullable=False, index=True)

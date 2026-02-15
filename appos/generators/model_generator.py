@@ -23,6 +23,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, get_args, get_origin
 
+from appos.utilities.utils import to_snake
+
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
@@ -142,12 +144,6 @@ def _get_le(field_info: FieldInfo) -> Optional[float]:
     return getattr(field_info, "le", None)
 
 
-def _to_snake(name: str) -> str:
-    """CamelCase → snake_case."""
-    s1 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
 # ---------------------------------------------------------------------------
 # Record Parser
 # ---------------------------------------------------------------------------
@@ -259,7 +255,7 @@ def parse_record(record_class: type, app_name: str = "") -> ParsedRecord:
     class_name = record_class.__name__
 
     # Meta config
-    table_name = getattr(meta, "table_name", _to_snake(class_name) + "s")
+    table_name = getattr(meta, "table_name", to_snake(class_name) + "s")
     audit = getattr(meta, "audit", False)
     soft_delete = getattr(meta, "soft_delete", False)
     display_field = getattr(meta, "display_field", None)
@@ -395,7 +391,7 @@ def generate_model_code(parsed: ParsedRecord) -> str:
             # FK column (only if not already in fields)
             field_names = {f.name for f in parsed.fields}
             if fk_col not in field_names:
-                target_table = _to_snake(r.target) + "s"
+                target_table = to_snake(r.target) + "s"
                 lines.append(
                     f'    {fk_col} = Column(Integer, ForeignKey("{target_table}.id"), '
                     f"nullable={nullable})"
@@ -691,7 +687,7 @@ def generate_and_write(
 
     # Model code
     model_code = generate_model_code(parsed)
-    model_path = os.path.join(output_dir, "models", f"{_to_snake(parsed.class_name)}.py")
+    model_path = os.path.join(output_dir, "models", f"{to_snake(parsed.class_name)}.py")
     _write_file(model_path, model_code)
     written[model_path] = model_code
 

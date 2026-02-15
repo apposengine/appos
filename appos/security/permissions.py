@@ -142,18 +142,31 @@ class UISecurityResolver:
         app_name: str,
         user_groups: Set[str],
         explicit_permissions: Optional[List[str]] = None,
+        object_ref: Optional[str] = None,
     ) -> bool:
         """
         Check if a user has access to a UI object.
+
+        Resolution order:
+        1. DB ObjectPermission entries for this object_ref (most specific)
+        2. Explicit decorator permissions
+        3. App-level default groups from app.yaml
 
         Args:
             app_name: App short name
             user_groups: Set of group names the user belongs to
             explicit_permissions: Permissions on the decorator
+            object_ref: Fully-qualified object reference for DB lookup
 
         Returns:
             True if user has access
         """
+        # Check DB-level permissions first (most specific)
+        if object_ref:
+            db_groups = self._get_db_permissions(object_ref, "view")
+            if db_groups:
+                return bool(user_groups & db_groups)
+
         effective = self.resolve_ui_permissions(app_name, explicit_permissions)
 
         # No permissions defined → open access (all groups)
@@ -166,6 +179,42 @@ class UISecurityResolver:
 
         # Check intersection
         return bool(user_groups & set(effective))
+
+    def _get_db_permissions(
+        self,
+        object_ref: str,
+        permission: str = "view",
+    ) -> Set[str]:
+        """
+        Query ObjectPermission table for groups granted a permission on an object.
+
+        Args:
+            object_ref: Fully-qualified object reference
+            permission: Permission type (view/use/create/update/delete/admin)
+
+        Returns:
+            Set of group names with the permission, empty if no DB entries.
+        """
+        try:
+            from appos.db.session import get_platform_session
+            from appos.db.platform_models import ObjectPermission
+
+            session = get_platform_session()
+            try:
+                rows = (
+                    session.query(ObjectPermission.group_name)
+                    .filter(
+                        ObjectPermission.object_ref == object_ref,
+                        ObjectPermission.permission == permission,
+                    )
+                    .all()
+                )
+                return {row.group_name for row in rows}
+            finally:
+                session.close()
+        except Exception:
+            # DB unavailable or table not created yet — fall through to defaults
+            return set()
 
     def validate_explicit_required(
         self,

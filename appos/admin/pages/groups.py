@@ -41,6 +41,8 @@ def groups_page() -> rx.Component:
                                 spacing="3",
                                 width="100%",
                             ),
+                            on_submit=AdminState.create_group,
+                            reset_on_submit=True,
                         ),
                     ),
                 ),
@@ -90,7 +92,13 @@ def _group_row(group: dict) -> rx.Component:
         ),
         rx.table.cell(
             rx.hstack(
-                rx.button("Edit", size="1", variant="outline"),
+                rx.button(
+                    rx.cond(group["is_active"], "Disable", "Enable"),
+                    size="1",
+                    variant="outline",
+                    color_scheme=rx.cond(group["is_active"], "red", "green"),
+                    on_click=AdminState.toggle_group_active(group["id"]),
+                ),
                 rx.button("Members", size="1", variant="outline"),
                 spacing="2",
             ),

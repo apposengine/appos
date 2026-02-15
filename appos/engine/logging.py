@@ -122,6 +122,115 @@ class FileLogger:
     def log_dir(self) -> Path:
         return self._log_dir
 
+    def query(
+        self,
+        object_type: str,
+        category: str,
+        *,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query log entries from JSONL files for a given object_type/category.
+
+        Args:
+            object_type: The object type folder (e.g. "rules", "integrations").
+            category: The category folder (e.g. "execution", "security").
+            start_date: Earliest date to include (defaults to 7 days ago).
+            end_date: Latest date to include (defaults to today).
+            filters: Optional dict of key/value pairs — only entries matching
+                     ALL of them (exact equality on top-level data keys) are returned.
+            limit: Max number of entries to return.
+
+        Returns:
+            List of parsed log-entry dicts, newest first.
+        """
+        if end_date is None:
+            end_date = date.today()
+        if start_date is None:
+            start_date = end_date - timedelta(days=7)
+
+        log_base = self._log_dir / object_type / category
+        if not log_base.exists():
+            return []
+
+        results: List[Dict[str, Any]] = []
+        current = end_date
+        while current >= start_date and len(results) < limit:
+            file_path = log_base / f"{current.isoformat()}.jsonl"
+            if file_path.exists():
+                results.extend(
+                    self._read_jsonl(file_path, filters, limit - len(results))
+                )
+            # Also check gzipped rotated file
+            gz_path = file_path.with_suffix(".jsonl.gz")
+            if gz_path.exists() and len(results) < limit:
+                results.extend(
+                    self._read_jsonl_gz(gz_path, filters, limit - len(results))
+                )
+            current -= timedelta(days=1)
+
+        # Newest first — reverse because we iterated dates descending but
+        # lines within a file are chronological
+        results.reverse()
+        return results[:limit]
+
+    @staticmethod
+    def _read_jsonl(
+        path: Path,
+        filters: Optional[Dict[str, Any]],
+        remaining: int,
+    ) -> List[Dict[str, Any]]:
+        """Read up to *remaining* matching entries from a .jsonl file."""
+        entries: List[Dict[str, Any]] = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if filters and not all(data.get(k) == v for k, v in filters.items()):
+                        continue
+                    entries.append(data)
+                    if len(entries) >= remaining:
+                        break
+        except OSError as exc:
+            logger.warning("Could not read log file %s: %s", path, exc)
+        return entries
+
+    @staticmethod
+    def _read_jsonl_gz(
+        path: Path,
+        filters: Optional[Dict[str, Any]],
+        remaining: int,
+    ) -> List[Dict[str, Any]]:
+        """Read up to *remaining* matching entries from a gzipped .jsonl.gz file."""
+        entries: List[Dict[str, Any]] = []
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if filters and not all(data.get(k) == v for k, v in filters.items()):
+                        continue
+                    entries.append(data)
+                    if len(entries) >= remaining:
+                        break
+        except OSError as exc:
+            logger.warning("Could not read gzipped log file %s: %s", path, exc)
+        return entries
+
 
 class AsyncLogQueue:
     """

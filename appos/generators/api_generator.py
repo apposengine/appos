@@ -23,6 +23,8 @@ Design refs: AppOS_Design.md §9 (API Endpoint Generator), §12 (Web API Engine)
 from __future__ import annotations
 
 import logging
+
+from appos.utilities.utils import to_snake
 import os
 import textwrap
 from pathlib import Path
@@ -58,9 +60,55 @@ class ApiGenerator:
         """
         Discover @record objects and generate REST API definitions.
 
+        Prefers registry-based discovery (objects already scanned at startup).
+        Falls back to AST-based file scanning if registry is empty.
+
         Returns:
             Number of API definition files generated.
         """
+        # Prefer registry-based discovery when objects are registered
+        count = self._generate_from_registry()
+        if count >= 0:
+            return count
+
+        # Fallback: AST-based discovery from source files
+        return self._generate_from_files()
+
+    def _generate_from_registry(self) -> int:
+        """
+        Generate API definitions for @record objects found in the registry.
+
+        Returns:
+            Number generated, or -1 if registry has no record objects for this app.
+        """
+        from appos.engine.registry import object_registry
+
+        record_objects = object_registry.get_by_type("record", app_name=self.app_name)
+        if not record_objects:
+            return -1  # Signal fallback
+
+        count = 0
+        for reg_obj in record_objects:
+            meta = reg_obj.metadata or {}
+            if not meta.get("generate_api", True):
+                continue
+
+            record_info = {
+                "name": meta.get("class_name", reg_obj.name),
+                "table_name": meta.get("table_name", to_snake(reg_obj.name) + "s"),
+                "fields": list(meta.get("fields", {}).keys()) if isinstance(meta.get("fields"), dict) else meta.get("fields", []),
+                "generate_api": True,
+            }
+            try:
+                self._generate_api(record_info)
+                count += 1
+            except Exception as e:
+                logger.warning(f"Failed to generate API for {reg_obj.object_ref}: {e}")
+
+        return count
+
+    def _generate_from_files(self) -> int:
+        """Fallback: discover records via AST parsing of source files."""
         records_dir = self.app_dir / "records"
         if not records_dir.exists():
             logger.info(f"No records/ directory in {self.app_dir}")
@@ -106,7 +154,7 @@ class ApiGenerator:
 
             # Parse Meta
             generate_api = True
-            table_name = _to_snake(node.name)
+            table_name = to_snake(node.name)
             for item in node.body:
                 if isinstance(item, ast.ClassDef) and item.name == "Meta":
                     for meta_item in item.body:
@@ -142,7 +190,7 @@ class ApiGenerator:
         """
         record_name = record["name"]
         table_name = record["table_name"]
-        snake_name = _to_snake(record_name)
+        snake_name = to_snake(record_name)
         plural = table_name + "s" if not table_name.endswith("s") else table_name
         base_path = f"/api/{self.app_name}/{plural}"
         service_class = f"{record_name}Service"
@@ -282,8 +330,4 @@ class ApiGenerator:
         return output_path
 
 
-def _to_snake(name: str) -> str:
-    """Convert CamelCase to snake_case."""
-    import re
-    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+

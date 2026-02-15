@@ -286,7 +286,7 @@ class ProcessContext:
         Get variables in their storage form:
         - logged: plaintext
         - hidden: SHA-256 hash
-        - sensitive: marked for encryption (actual encryption done by persistence layer)
+        - sensitive: Fernet-encrypted via CredentialManager
         """
         result = {}
         for name, value in self._variables.items():
@@ -296,7 +296,15 @@ class ProcessContext:
             elif vis == "hidden":
                 result[name] = f"sha256:{hashlib.sha256(json.dumps(value, default=str).encode()).hexdigest()}"
             elif vis == "sensitive":
-                result[name] = f"enc:{json.dumps(value, default=str)}"  # Placeholder — Fernet encryption in persistence layer
+                # Use CredentialManager for Fernet encryption
+                try:
+                    from appos.engine.credentials import CredentialManager
+                    cm = CredentialManager()
+                    encrypted = cm.encrypt({name: value})
+                    result[name] = f"enc:{encrypted.decode('utf-8') if isinstance(encrypted, bytes) else encrypted}"
+                except Exception:
+                    # Fallback: store hashed if encryption unavailable
+                    result[name] = f"sha256:{hashlib.sha256(json.dumps(value, default=str).encode()).hexdigest()}"
         return result
 
     @property

@@ -23,6 +23,8 @@ Design refs:
 from __future__ import annotations
 
 import logging
+
+from appos.utilities.utils import to_snake
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -123,7 +125,7 @@ def generate_interfaces_for_record(
     """
     record_name = record_def.metadata.get("name", record_def.name)
     record_class_name = record_name
-    record_snake = _to_snake(record_name)
+    record_snake = to_snake(record_name)
 
     # Extract fields from the Pydantic model
     handler = record_def.handler
@@ -515,12 +517,4 @@ def generate_all_interfaces(
     return results
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
-def _to_snake(name: str) -> str:
-    """Convert CamelCase to snake_case."""
-    import re
-    s1 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
