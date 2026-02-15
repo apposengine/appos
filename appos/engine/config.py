@@ -20,12 +20,22 @@ from pydantic import BaseModel, Field, field_validator
 # ---------------------------------------------------------------------------
 
 class DatabaseConfig(BaseModel):
-    url: str = "postgresql://user:pass@localhost:5432/appos_core"
+    host: str = "localhost"
+    port: int = 5432
+    name: str = "appos_core"
+    user: str = "appos"
+    password: str = "appos_dev"
+    db_schema: str = "appOS"
     pool_size: int = 10
     max_overflow: int = 20
     pool_timeout: int = 30
     pool_recycle: int = 1800
     pool_pre_ping: bool = True
+
+    @property
+    def url(self) -> str:
+        """Build the full database URL from individual fields."""
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
 class RedisConfig(BaseModel):

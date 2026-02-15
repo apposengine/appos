@@ -206,6 +206,12 @@ class ProcessMonitorState(rx.State):
         """Set the search query."""
         self.search_query = query
 
+    def handle_search_key(self, key: str) -> None:
+        """Handle key press in search input — search on Enter."""
+        if key == "Enter":
+            self.page = 1
+            self.load_instances()
+
     def search_instances(self) -> None:
         """Apply search and reload."""
         self.page = 1
@@ -442,10 +448,7 @@ def processes_page() -> rx.Component:
                     placeholder="Search process name or ID…",
                     value=ProcessMonitorState.search_query,
                     on_change=ProcessMonitorState.set_search,
-                    on_key_down=rx.cond(
-                        rx.EventChain.key == "Enter",
-                        ProcessMonitorState.search_instances,
-                    ),
+                    on_key_down=ProcessMonitorState.handle_search_key,
                     size="2",
                     width="300px",
                 ),

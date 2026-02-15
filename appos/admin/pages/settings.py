@@ -208,7 +208,7 @@ def settings_page() -> rx.Component:
                                     SettingsState.save_error,
                                     rx.callout(
                                         SettingsState.save_error,
-                                        icon="alert_triangle",
+                                        icon="triangle_alert",
                                         color_scheme="red",
                                         size="1",
                                     ),

@@ -226,11 +226,11 @@ def metrics_page() -> rx.Component:
                 _stat_card("Total Calls", MetricsState.total_calls_24h),
                 _stat_card(
                     "Avg Duration",
-                    rx.text(f"{MetricsState.avg_duration_ms:.1f} ms"),
+                    rx.text(MetricsState.avg_duration_ms.to(str) + " ms"),
                 ),
                 _stat_card(
                     "Error Rate",
-                    rx.text(f"{MetricsState.error_rate:.1f}%"),
+                    rx.text(MetricsState.error_rate.to(str) + "%"),
                 ),
                 columns="3",
                 spacing="4",

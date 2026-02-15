@@ -266,7 +266,7 @@ def connections_page() -> rx.Component:
                                     ConnectionsState.create_error != "",
                                     rx.callout(
                                         ConnectionsState.create_error,
-                                        icon="alert-circle",
+                                        icon="circle_alert",
                                         color_scheme="red",
                                     ),
                                     rx.fragment(),
@@ -410,7 +410,7 @@ def _connection_detail() -> rx.Component:
                     _detail_row("Auth Type",
                                 ConnectionsState.connection_detail["auth_type"]),
                     _detail_row("Timeout",
-                                ConnectionsState.connection_detail["timeout_seconds"]
+                                ConnectionsState.connection_detail["timeout_seconds"].to(str)
                                 + "s"),
                     _detail_row("Max Retries",
                                 ConnectionsState.connection_detail["max_retries"]),
@@ -440,7 +440,7 @@ def _connection_detail() -> rx.Component:
                             spacing="2",
                         ),
                         rx.hstack(
-                            rx.icon("unlock", size=14, color="orange"),
+                            rx.icon("lock-open", size=14, color="orange"),
                             rx.text("No credentials configured", size="2",
                                     color="orange"),
                             spacing="2",

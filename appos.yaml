@@ -10,9 +10,10 @@ platform:
 database:
   host: "localhost"
   port: 5432
-  name: "appos_core"
-  user: "appos"
-  password: "appos_dev"
+  name: "postgres"
+  user: "postgres"
+  password: "admin"
+  db_schema: "appOS"
   pool_size: 10
   max_overflow: 20
   pool_timeout: 30
@@ -52,7 +53,7 @@ security:
 logging:
   level: "INFO"
   format: "json"
-  directory: "logs"
+  directory: ".appos/logs"
   rotation:
     strategy: "daily"
     max_file_size_mb: 100

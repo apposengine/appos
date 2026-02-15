@@ -46,9 +46,9 @@ git clone <repo-url> appOSDev
 cd appOSDev
 
 # Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate     # Windows
-# source .venv/bin/activate  # Linux/Mac
+python -m venv .env
+.env\Scripts\activate     # Windows
+# source .env/bin/activate  # Linux/Mac
 
 # Install dependencies
 pip install -r requirements.txt

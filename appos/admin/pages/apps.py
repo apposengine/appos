@@ -34,7 +34,7 @@ def apps_page() -> rx.Component:
                                 rx.text_area(
                                     name="description",
                                     placeholder="Brief description of the app",
-                                    rows=3,
+                                    rows="3",
                                 ),
                                 rx.hstack(
                                     rx.dialog.close(

@@ -44,8 +44,10 @@ def main(argv: Optional[list] = None) -> int:
 
     # appos run
     run_parser = subparsers.add_parser("run", help="Start the Reflex dev server")
-    run_parser.add_argument("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
-    run_parser.add_argument("--port", type=int, default=3000, help="Port (default: 3000)")
+    run_parser.add_argument("--host", default="0.0.0.0", help="Backend host to bind (default: 0.0.0.0)")
+    run_parser.add_argument("--port", type=int, default=3000, help="Frontend port (default: 3000)")
+    run_parser.add_argument("--backend-port", type=int, default=8000, help="Backend port (default: 8000)")
+    run_parser.add_argument("--env", choices=["dev", "prod"], default="dev", help="Environment (default: dev)")
 
     # appos impact
     impact_parser = subparsers.add_parser("impact", help="Impact analysis for an object")
@@ -136,12 +138,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     # 2. Build DB URL and create engine
+    import sqlalchemy
     from sqlalchemy import create_engine
 
-    db_url = (
-        f"postgresql://{config.database.user}:{config.database.password}"
-        f"@{config.database.host}:{config.database.port}/{config.database.name}"
-    )
+    db_url = config.database.url
 
     try:
         from sqlalchemy import text
@@ -156,10 +156,26 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"  Ensure PostgreSQL is running and database '{config.database.name}' exists.")
         return 1
 
-    # 3. Create tables
+    # 3. Create schema and tables
     from appos.db.base import Base
 
+    schema_name = config.database.db_schema
     try:
+        from sqlalchemy import text as sa_text
+
+        # Ensure the schema exists
+        with engine.connect() as conn:
+            conn.execute(sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+            conn.commit()
+        print(f"[OK] Schema '{schema_name}' ready")
+
+        # Set search_path so all tables are created in the target schema
+        @sqlalchemy.event.listens_for(engine, "connect")
+        def set_search_path(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute(f'SET search_path TO "{schema_name}", public')
+            cursor.close()
+
         Base.metadata.create_all(engine)
         print("[OK] Database tables created")
     except Exception as e:
@@ -182,8 +198,8 @@ def cmd_init(args: argparse.Namespace) -> int:
                 break
             print("  Passwords do not match. Try again.")
 
-    if len(admin_password) < 8:
-        print("[ERROR] Password must be at least 8 characters")
+    if len(admin_password) < 4:
+        print("[ERROR] Password must be at least 4 characters")
         return 1
 
     session = SA_Session(engine)
@@ -191,7 +207,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         # Check if already initialized
         existing_admin = session.query(User).filter_by(username="admin").first()
         if existing_admin:
-            print("[SKIP] Platform already initialized (admin user exists)")
+            print("[INFO] Platform already initialized (admin user exists)")
+            existing_admin.password_hash = hash_password(admin_password)
+            existing_admin.is_active = True
+            session.commit()
+            print("[OK] Admin password updated")
             return 0
 
         # Create system_admin user
@@ -280,10 +300,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     print("Starting AppOS (Reflex) server...")
     try:
-        result = subprocess.run(
-            ["reflex", "run", "--host", args.host, "--port", str(args.port)],
-            check=True,
-        )
+        cmd = [
+            "reflex", "run",
+            "--backend-host", args.host,
+            "--frontend-port", str(args.port),
+            "--backend-port", str(args.backend_port),
+            "--env", args.env,
+        ]
+        result = subprocess.run(cmd, check=True)
         return result.returncode
     except FileNotFoundError:
         print("[ERROR] 'reflex' command not found. Install: pip install reflex")
@@ -691,15 +715,22 @@ def _apply_migrations(app_name: str, migrations_dir) -> int:
         print(f"  [ERROR] Cannot load config: {e}")
         return 1
 
+    import sqlalchemy
     from sqlalchemy import create_engine, text
 
-    db_url = (
-        f"postgresql://{config.database.user}:{config.database.password}"
-        f"@{config.database.host}:{config.database.port}/{config.database.name}"
-    )
+    db_url = config.database.url
+    schema_name = config.database.db_schema
 
     try:
         engine = create_engine(db_url, echo=False)
+
+        # Set search_path so migrations run against the correct schema
+        @sqlalchemy.event.listens_for(engine, "connect")
+        def set_search_path(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute(f'SET search_path TO "{schema_name}", public')
+            cursor.close()
+
         applied = 0
         for mig_file in migration_files:
             print(f"  Applying: {mig_file.name}")

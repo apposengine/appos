@@ -41,9 +41,9 @@ class TestPlatformConfig:
 
     def test_custom_database(self):
         cfg = PlatformConfig(
-            database=DatabaseConfig(url="postgresql://a:b@host/db", pool_size=20)
+            database=DatabaseConfig(host="host", user="a", password="b", name="db", pool_size=20)
         )
-        assert cfg.database.url == "postgresql://a:b@host/db"
+        assert cfg.database.url == "postgresql://a:b@host:5432/db"
         assert cfg.database.pool_size == 20
 
     def test_custom_security(self):

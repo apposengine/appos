@@ -1,3 +1,7 @@
+.states
+*.db
+assets/external/
+.web
 # Python
 __pycache__/
 *.py[cod]
@@ -20,10 +24,10 @@ ENV/
 *.swp
 *.swo
 
-# AppOS runtime
-.appos/logs/
-.appos/runtime/
-apps/*/runtime/
+# AppOS runtime (dot-prefixed — invisible to watchfiles/Reflex hot-reload)
+.appos/
+logs/
+migrations/
 
 # OS
 .DS_Store
@@ -32,8 +36,9 @@ Thumbs.db
 # Reflex
 .web/
 
-# Environment
+# Environment files
 .env
+.env.local
 .env.*
 
 # Byte-compiled

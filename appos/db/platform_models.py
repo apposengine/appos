@@ -66,7 +66,14 @@ class User(Base, AuditMixin):
     api_key_hash = Column(String(255), nullable=True)
 
     # Relationships
-    groups = relationship("Group", secondary="user_groups", back_populates="users", lazy="selectin")
+    groups = relationship(
+        "Group",
+        secondary="user_groups",
+        back_populates="users",
+        lazy="selectin",
+        primaryjoin="User.id == UserGroup.user_id",
+        secondaryjoin="Group.id == UserGroup.group_id",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -93,7 +100,14 @@ class Group(Base, AuditMixin):
     is_active = Column(Boolean, default=True, nullable=False, index=True)
 
     # Relationships
-    users = relationship("User", secondary="user_groups", back_populates="groups", lazy="selectin")
+    users = relationship(
+        "User",
+        secondary="user_groups",
+        back_populates="groups",
+        lazy="selectin",
+        primaryjoin="Group.id == UserGroup.group_id",
+        secondaryjoin="User.id == UserGroup.user_id",
+    )
     apps = relationship("App", secondary="group_apps", back_populates="groups", lazy="selectin")
 
     __table_args__ = (

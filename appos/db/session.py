@@ -19,18 +19,35 @@ from appos.db.base import Base, engine_registry
 _platform_session_factory: Optional[scoped_session] = None
 
 
-def init_platform_db(db_url: str, **kwargs) -> None:
+def init_platform_db(db_url: str, schema: Optional[str] = None, **kwargs) -> None:
     """
     Initialize the platform database engine and create tables.
 
     Args:
         db_url: PostgreSQL connection URL for appos_core.
+        schema: PostgreSQL schema name (e.g. 'appOS'). If set, tables are
+                created inside this schema via search_path.
         **kwargs: Additional engine kwargs (pool_size, etc.).
     """
     global _platform_session_factory
 
     engine_registry.register("appos_core", db_url, **kwargs)
     engine = engine_registry.get("appos_core")
+
+    # Apply schema if specified — use search_path so all table references resolve
+    if schema:
+        import sqlalchemy
+        from sqlalchemy import text as sa_text
+
+        with engine.connect() as conn:
+            conn.execute(sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+            conn.commit()
+
+        @sqlalchemy.event.listens_for(engine, "connect")
+        def set_search_path(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute(f'SET search_path TO "{schema}", public')
+            cursor.close()
 
     # Create all platform tables
     Base.metadata.create_all(engine)

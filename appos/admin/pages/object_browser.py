@@ -205,6 +205,11 @@ class ObjectBrowserState(rx.State):
         """Set the search query."""
         self.search_query = query
 
+    def handle_search_key(self, key: str) -> None:
+        """Handle key press in search input — search on Enter."""
+        if key == "Enter":
+            self.load_objects()
+
     def search_objects(self) -> None:
         """Apply search and reload."""
         self.load_objects()
@@ -264,10 +269,11 @@ def object_row(obj: dict) -> rx.Component:
 
 def dependency_row(dep: dict) -> rx.Component:
     """Render a dependency relationship row."""
+    is_depends_on = dep["direction"] == "depends_on"
     return rx.hstack(
         rx.badge(
-            "→" if dep["direction"] == "depends_on" else "←",
-            color_scheme="blue" if dep["direction"] == "depends_on" else "green",
+            rx.cond(is_depends_on, "→", "←"),
+            color_scheme=rx.cond(is_depends_on, "blue", "green"),
             size="1",
         ),
         rx.text(
@@ -275,7 +281,7 @@ def dependency_row(dep: dict) -> rx.Component:
             size="2",
         ),
         rx.text(
-            "(depends on)" if dep["direction"] == "depends_on" else "(depended by)",
+            rx.cond(is_depends_on, "(depends on)", "(depended by)"),
             size="1",
             color="gray",
         ),
@@ -442,10 +448,7 @@ def object_browser_page() -> rx.Component:
                     placeholder="Search objects…",
                     value=ObjectBrowserState.search_query,
                     on_change=ObjectBrowserState.set_search,
-                    on_key_down=rx.cond(
-                        rx.EventChain.key == "Enter",
-                        ObjectBrowserState.search_objects,
-                    ),
+                    on_key_down=ObjectBrowserState.handle_search_key,
                     size="2",
                     width="300px",
                 ),

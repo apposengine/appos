@@ -238,7 +238,7 @@ def _session_row(session: dict) -> rx.Component:
     """Render a single session row."""
     return rx.table.row(
         rx.table.cell(
-            rx.code(session["session_id"][:12] + "…", size="1"),
+            rx.code(session["session_id"].to(str)[:12] + "…", size="1"),
         ),
         rx.table.cell(rx.text(session["username"], weight="bold")),
         rx.table.cell(rx.badge(session["user_type"])),

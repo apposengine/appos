@@ -19,4 +19,6 @@ config = rx.Config(
     backend_port=8000,
     # Telemetry
     telemetry_enabled=False,
+    # Disable unused default plugins
+    disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],
 )

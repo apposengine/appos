@@ -32,6 +32,11 @@ class ThemesState(rx.State):
 
     save_message: str = ""
 
+    @rx.var
+    def app_names(self) -> list[str]:
+        """Computed var: list of app short names for the select dropdown."""
+        return [app["short_name"] for app in self.apps]
+
     def load_apps(self) -> None:
         """Load apps list for theme selection."""
         try:
@@ -131,7 +136,7 @@ def themes_page() -> rx.Component:
             rx.hstack(
                 rx.text("Application:", weight="bold", size="2"),
                 rx.select(
-                    [app["short_name"] for app in ThemesState.apps],
+                    ThemesState.app_names,
                     placeholder="Select an app…",
                     value=ThemesState.selected_app,
                     on_change=ThemesState.select_app,
