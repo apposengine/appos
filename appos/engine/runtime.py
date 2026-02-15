@@ -36,6 +36,7 @@ from appos.engine.cache import (
 )
 from appos.engine.context import (
     ExecutionContext,
+    clear_execution_context,
     get_execution_context,
     require_execution_context,
     set_execution_context,
@@ -199,7 +200,7 @@ class CentralizedRuntime:
         logger.info("AppOS Runtime Engine started successfully")
 
     def shutdown(self) -> None:
-        """Flush all queues, persist state, close connections."""
+        """Flush all queues, persist state, close connections, release resources."""
         if not self._started:
             return
 
@@ -226,6 +227,32 @@ class CentralizedRuntime:
         # 3. Flush and stop logging
         log(log_system_event("platform_shutdown"))
         shutdown_logging()
+
+        # 4. Close Redis connections
+        for cache_name in ("permission_cache", "session_store", "object_cache", "rate_limiter"):
+            cache = getattr(self, cache_name, None)
+            if cache is None:
+                continue
+            # PermissionCache wraps a RedisCache in _cache
+            inner = getattr(cache, "_cache", cache)
+            if hasattr(inner, "close"):
+                try:
+                    inner.close()
+                except Exception as exc:
+                    logger.warning("Failed to close %s: %s", cache_name, exc)
+            setattr(self, cache_name, None)
+        logger.info("Redis connections closed")
+
+        # 5. Clear the object registry (allows clean re-init in tests)
+        from appos.engine.registry import object_registry
+        object_registry.clear()
+
+        # 6. Clear execution context on the current thread
+        clear_execution_context()
+
+        # 7. Reset module-level runtime singleton
+        global _runtime
+        _runtime = None
 
         self._started = False
         logger.info("AppOS Runtime Engine shut down")
@@ -772,6 +799,9 @@ class CentralizedRuntime:
                 "dropped": self.log_queue.dropped_count,
             }
 
+        if self.integration_executor:
+            status["httpx_clients"] = self.integration_executor.client_stats()
+
         return status
 
     def _register_health_checks(self) -> None:
@@ -813,6 +843,22 @@ class CentralizedRuntime:
 
             self.health_service.register_check("log_queue", check_log_queue)
 
+        # Integration executor — httpx client pool health
+        if self.integration_executor:
+            ie = self.integration_executor
+
+            async def check_httpx_pool() -> dict:
+                stats = ie.client_stats()
+                active = stats["active_clients"]
+                cap = stats["max_clients"]
+                if active >= cap:
+                    return {"status": "unhealthy", **stats}
+                if active >= cap * 0.8:
+                    return {"status": "degraded", **stats}
+                return {"status": "healthy", **stats}
+
+            self.health_service.register_check("httpx_clients", check_httpx_pool)
+
     def _security_status(self) -> Dict[str, Any]:
         """Return security-related status information for AI queries."""
         result: Dict[str, Any] = {
@@ -836,6 +882,8 @@ class CentralizedRuntime:
             result["object_cache"] = "active"
         if self.rate_limiter:
             result["rate_limiter"] = "active"
+        if self.integration_executor:
+            result["httpx_clients"] = self.integration_executor.client_stats()
         return result
 
 

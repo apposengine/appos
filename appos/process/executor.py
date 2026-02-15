@@ -211,11 +211,28 @@ class ProcessExecutor:
             f"({len(steps)} steps, async={async_execution})"
         )
 
+        # Capture current ExecutionContext for propagation across steps
+        from appos.engine.context import (
+            get_execution_context, create_system_context,
+            set_execution_context,
+        )
+        exec_ctx = get_execution_context()
+        if exec_ctx is None:
+            # No context from caller — create one for this process
+            exec_ctx = create_system_context("process")
+            exec_ctx.user_id = user_id
+            set_execution_context(exec_ctx)
+        exec_ctx.process_instance_id = instance_id
+
         if async_execution:
-            # Dispatch first step via Celery
-            self._dispatch_step_async(instance_id, process_ref, steps, 0)
+            # Serialize context for Celery task transfer
+            exec_ctx_data = exec_ctx.to_serializable()
+            self._dispatch_step_async(
+                instance_id, process_ref, steps, 0,
+                exec_ctx_data=exec_ctx_data,
+            )
         else:
-            # Execute all steps synchronously
+            # Execute all steps synchronously (context already on thread)
             self._execute_steps_sync(instance_id, process_ref, steps, inputs)
 
         return instance_data
@@ -281,8 +298,15 @@ class ProcessExecutor:
         process_ref: str,
         steps: List[Dict[str, Any]],
         step_index: int,
+        exec_ctx_data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Dispatch a step for async execution via Celery."""
+        """Dispatch a step for async execution via Celery.
+
+        Args:
+            exec_ctx_data: Serialized ExecutionContext dict propagated to each
+                Celery worker so that permission checks, logging, and nested
+                rule dispatches retain the original user identity.
+        """
         if step_index >= len(steps):
             self._complete_process(instance_id)
             return
@@ -301,6 +325,7 @@ class ProcessExecutor:
                         step_index=step_index,
                         total_steps=len(steps),
                         is_parallel=True,
+                        exec_ctx_data=exec_ctx_data,
                     )
                 )
             if tasks:
@@ -311,6 +336,7 @@ class ProcessExecutor:
                     process_ref=process_ref,
                     steps=steps,
                     next_step_index=next_index,
+                    exec_ctx_data=exec_ctx_data,
                 )
                 job = celery_chord(celery_group(tasks), callback)
                 job.apply_async()
@@ -327,6 +353,7 @@ class ProcessExecutor:
                 step_index=step_index,
                 total_steps=len(steps),
                 is_parallel=False,
+                exec_ctx_data=exec_ctx_data,
             )
 
     def _execute_steps_sync(
@@ -377,6 +404,13 @@ class ProcessExecutor:
         retry_delay = step_def.get("retry_delay", 5)
         condition = step_def.get("condition")
         fire_and_forget = step_def.get("fire_and_forget", False)
+
+        # Annotate ExecutionContext with current step info
+        from appos.engine.context import get_execution_context
+        _exec_ctx = get_execution_context()
+        if _exec_ctx:
+            _exec_ctx.process_instance_id = instance_id
+            _exec_ctx.step_name = step_name
 
         # Update current step in instance
         self._update_instance_step(instance_id, step_name)
@@ -732,30 +766,46 @@ def execute_process_step_task(
     step_index: int,
     total_steps: int,
     is_parallel: bool = False,
+    exec_ctx_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Celery task: execute a single process step.
 
     Called by ProcessExecutor._dispatch_step_async().
     After completion, triggers the next step (unless parallel).
+    Restores ExecutionContext from serialized data so that permission
+    checks, logging, and nested rule dispatches have user identity.
     """
-    from appos.engine.context import ProcessContext
-
-    executor = get_process_executor()
-
-    # Load current process variables from DB
-    instance_data = executor.get_instance(instance_id)
-    if instance_data is None:
-        logger.error(f"Process instance not found: {instance_id}")
-        return {"status": "error", "message": "Instance not found"}
-
-    ctx = ProcessContext(
-        instance_id=instance_id,
-        inputs=instance_data.get("inputs", {}),
-        variables=instance_data.get("variables", {}),
+    from appos.engine.context import (
+        ProcessContext, ExecutionContext,
+        set_execution_context, clear_execution_context,
+        create_system_context,
     )
 
+    # ── Restore ExecutionContext on this Celery worker thread ──
+    if exec_ctx_data:
+        exec_ctx = ExecutionContext.from_serializable(exec_ctx_data)
+    else:
+        exec_ctx = create_system_context("celery_step")
+    exec_ctx.process_instance_id = instance_id
+    exec_ctx.step_name = step_def.get("name", "unnamed")
+    set_execution_context(exec_ctx)
+
     try:
+        executor = get_process_executor()
+
+        # Load current process variables from DB
+        instance_data = executor.get_instance(instance_id)
+        if instance_data is None:
+            logger.error(f"Process instance not found: {instance_id}")
+            return {"status": "error", "message": "Instance not found"}
+
+        ctx = ProcessContext(
+            instance_id=instance_id,
+            inputs=instance_data.get("inputs", {}),
+            variables=instance_data.get("variables", {}),
+        )
+
         result = executor._execute_single_step(
             instance_id=instance_id,
             process_ref=process_ref,
@@ -773,7 +823,8 @@ def execute_process_step_task(
                 process_def = parse_process_definition(registered.handler)
                 steps = process_def.get("steps", [])
                 executor._dispatch_step_async(
-                    instance_id, process_ref, steps, step_index + 1
+                    instance_id, process_ref, steps, step_index + 1,
+                    exec_ctx_data=exec_ctx_data,
                 )
         elif not is_parallel and step_index + 1 >= total_steps:
             # Last step — complete the process
@@ -784,6 +835,8 @@ def execute_process_step_task(
     except Exception as e:
         logger.error(f"Step execution failed: {e}")
         return {"status": "failed", "step": step_def.get("name"), "error": str(e)}
+    finally:
+        clear_execution_context()
 
 
 @celery_app.task(name="appos.process.executor.start_process_task")
@@ -791,19 +844,37 @@ def start_process_task(
     process_ref: str,
     inputs: Dict[str, Any],
     user_id: int = 0,
+    exec_ctx_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Celery task: start a process asynchronously.
 
     Can be used from Web APIs with async=True mode.
+    Restores ExecutionContext from serialized data for the worker.
     """
-    executor = get_process_executor()
-    return executor.start_process(
-        process_ref=process_ref,
-        inputs=inputs,
-        user_id=user_id,
-        async_execution=True,
+    from appos.engine.context import (
+        ExecutionContext, set_execution_context,
+        clear_execution_context, create_system_context,
     )
+
+    # Restore ExecutionContext on this Celery worker thread
+    if exec_ctx_data:
+        exec_ctx = ExecutionContext.from_serializable(exec_ctx_data)
+    else:
+        exec_ctx = create_system_context("celery_process")
+        exec_ctx.user_id = user_id
+    set_execution_context(exec_ctx)
+
+    try:
+        executor = get_process_executor()
+        return executor.start_process(
+            process_ref=process_ref,
+            inputs=inputs,
+            user_id=user_id,
+            async_execution=True,
+        )
+    finally:
+        clear_execution_context()
 
 
 @celery_app.task(name="appos.process.executor.advance_process_step")
@@ -813,12 +884,14 @@ def _advance_process_step(
     process_ref: str,
     steps: List[Dict[str, Any]],
     next_step_index: int,
+    exec_ctx_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Celery chord callback: advance to next step after parallel group completes.
 
     Called automatically by chord() when all parallel tasks finish.
     Triggers the next sequential step or completes the process.
+    Propagates ExecutionContext to the next step dispatch.
     """
     executor = get_process_executor()
 
@@ -826,7 +899,10 @@ def _advance_process_step(
         executor._complete_process(instance_id)
         return {"status": "completed", "instance_id": instance_id}
 
-    executor._dispatch_step_async(instance_id, process_ref, steps, next_step_index)
+    executor._dispatch_step_async(
+        instance_id, process_ref, steps, next_step_index,
+        exec_ctx_data=exec_ctx_data,
+    )
     return {"status": "advancing", "next_step": next_step_index}
 
 

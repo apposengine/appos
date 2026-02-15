@@ -223,6 +223,49 @@ class ConnectionsState(rx.State):
         except Exception:
             pass
 
+    def rotate_credentials(self) -> None:
+        """
+        Rotate credentials for the selected Connected System.
+
+        After DB credential update, closes the cached httpx client so the
+        next outbound call creates a fresh client with the new auth headers.
+        """
+        if not self.selected_connection:
+            return
+
+        try:
+            from appos.admin.state import _get_runtime
+
+            runtime = _get_runtime()
+            if runtime is None:
+                return
+
+            # Close the cached httpx client for this CS so it picks up new creds
+            if runtime.integration_executor:
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(
+                            runtime.integration_executor.close_client(self.selected_connection)
+                        )
+                    else:
+                        loop.run_until_complete(
+                            runtime.integration_executor.close_client(self.selected_connection)
+                        )
+                except RuntimeError:
+                    asyncio.run(
+                        runtime.integration_executor.close_client(self.selected_connection)
+                    )
+
+            # Also invalidate the CS resolver cache
+            if runtime.integration_executor and runtime.integration_executor._cs_resolver:
+                runtime.integration_executor._cs_resolver.invalidate(self.selected_connection)
+
+            self._load_connection_detail()
+        except Exception:
+            pass
+
 
 def connections_page() -> rx.Component:
     """Connected Systems management page."""
@@ -427,7 +470,8 @@ def _connection_detail() -> rx.Component:
                         rx.spacer(),
                         rx.button("Edit", size="1", variant="outline"),
                         rx.button("Rotate", size="1", variant="outline",
-                                  color_scheme="orange"),
+                                  color_scheme="orange",
+                                  on_click=ConnectionsState.rotate_credentials),
                         width="100%",
                         align="center",
                     ),

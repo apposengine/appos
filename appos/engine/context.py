@@ -87,6 +87,42 @@ class ExecutionContext:
             "step_name": self.step_name,
         }
 
+    def to_serializable(self) -> Dict[str, Any]:
+        """
+        Serialize to JSON-safe dict for cross-process transfer (Celery tasks).
+
+        Unlike to_dict(), this includes all fields needed to reconstruct the
+        full ExecutionContext on a remote worker.
+        """
+        return {
+            "user_id": self.user_id,
+            "username": self.username,
+            "user_type": self.user_type,
+            "user_groups": sorted(self.user_groups),
+            "execution_id": self.execution_id,
+            "app_name": self.app_name,
+            "preferred_language": self.preferred_language,
+            "timezone": self.timezone,
+            "full_name": self.full_name,
+            "session_id": self.session_id,
+        }
+
+    @classmethod
+    def from_serializable(cls, data: Dict[str, Any]) -> "ExecutionContext":
+        """Reconstruct from serialized dict (e.g., received in a Celery task)."""
+        return cls(
+            user_id=data["user_id"],
+            username=data["username"],
+            user_type=data["user_type"],
+            user_groups=set(data.get("user_groups", [])),
+            execution_id=data.get("execution_id", f"exec_{uuid.uuid4().hex[:12]}"),
+            app_name=data.get("app_name"),
+            preferred_language=data.get("preferred_language", "en"),
+            timezone=data.get("timezone", "UTC"),
+            full_name=data.get("full_name", ""),
+            session_id=data.get("session_id"),
+        )
+
 
 def set_execution_context(ctx: ExecutionContext) -> None:
     """Set the execution context for the current thread/task."""
@@ -112,6 +148,25 @@ def require_execution_context() -> ExecutionContext:
 def clear_execution_context() -> None:
     """Clear the execution context (e.g., on logout or request end)."""
     current_execution_context.set(None)
+
+
+def create_system_context(description: str = "system") -> ExecutionContext:
+    """
+    Create an ExecutionContext for system-level operations.
+
+    Used for scheduled tasks, system events, and any execution path that
+    doesn't originate from an authenticated user request.
+
+    Args:
+        description: Label for the system context (e.g., "scheduler", "process").
+    """
+    return ExecutionContext(
+        user_id=0,
+        username=f"system_{description}",
+        user_type="service_account",
+        user_groups={"system_admin"},
+        full_name=f"System ({description})",
+    )
 
 
 def get_preferred_language() -> str:

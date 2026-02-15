@@ -367,11 +367,20 @@ def get_scheduled_task():
 
             Called by Celery Beat according to the cron schedule
             configured via ProcessScheduler.apply_celery_beat_config().
+            Sets a system-level ExecutionContext for the scheduled execution.
             """
+            from appos.engine.context import (
+                create_system_context, set_execution_context,
+                clear_execution_context,
+            )
             from appos.process.executor import get_process_executor
-            executor = get_process_executor()
+
+            # Set system context for scheduled tasks
+            exec_ctx = create_system_context("scheduler")
+            set_execution_context(exec_ctx)
 
             try:
+                executor = get_process_executor()
                 instance = executor.start_process(
                     process_ref=process_ref,
                     inputs={"triggered_by": "schedule", "timestamp": datetime.now(timezone.utc).isoformat()},
@@ -383,6 +392,8 @@ def get_scheduled_task():
             except Exception as e:
                 logger.error(f"Scheduled process failed to start: {process_ref}: {e}")
                 return {"error": str(e)}
+            finally:
+                clear_execution_context()
 
         _scheduled_task = scheduled_process_task
     return _scheduled_task

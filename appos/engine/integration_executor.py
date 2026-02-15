@@ -340,6 +340,10 @@ class IntegrationExecutor:
     Connected System credentials come from admin-managed encrypted DB store.
     """
 
+    # Safety cap — Connected Systems are developer-defined and few in number.
+    # This prevents accidental growth (e.g., a bug generating dynamic CS names).
+    MAX_CLIENTS: int = 50
+
     def __init__(
         self,
         registry: ObjectRegistryManager,
@@ -555,8 +559,19 @@ class IntegrationExecutor:
 
         Connection pooled — one client per Connected System, reused across calls.
         Client lifecycle managed by the IntegrationExecutor (closed on shutdown).
+        A safety cap (MAX_CLIENTS) prevents accidental unbounded growth.
         """
         if cs_name not in self._clients:
+            # Safety cap — Connected Systems are dev-defined and few.
+            # If we hit this, something is generating dynamic CS names.
+            if len(self._clients) >= self.MAX_CLIENTS:
+                raise AppOSDispatchError(
+                    f"httpx client pool at capacity ({self.MAX_CLIENTS}). "
+                    f"Cannot create client for '{cs_name}'. "
+                    f"Active clients: {sorted(self._clients.keys())}",
+                    object_ref=f"connected_systems.{cs_name}",
+                )
+
             import httpx
 
             # Pool limits from Connected System config
@@ -573,8 +588,34 @@ class IntegrationExecutor:
                 timeout=httpx.Timeout(timeout, connect=10.0),
                 follow_redirects=True,
             )
+            logger.info(
+                f"Created httpx client for '{cs_name}' "
+                f"(pool: {len(self._clients)}/{self.MAX_CLIENTS})"
+            )
 
         return self._clients[cs_name]
+
+    async def close_client(self, cs_name: str) -> bool:
+        """
+        Close and remove the httpx client for a specific Connected System.
+
+        Useful when credentials are rotated via admin console — the next
+        call to that CS will create a fresh client with new auth headers.
+
+        Returns:
+            True if a client was found and closed, False otherwise.
+        """
+        client = self._clients.pop(cs_name, None)
+        if client is None:
+            return False
+        try:
+            await client.aclose()
+            logger.info(f"Closed httpx client for '{cs_name}'")
+        except Exception as e:
+            logger.warning(f"Error closing httpx client for '{cs_name}': {e}")
+        # Also invalidate the CS resolver cache so next call re-resolves
+        self._cs_resolver.invalidate(cs_name)
+        return True
 
     async def close_all_clients(self) -> None:
         """Close all httpx clients. Called during runtime shutdown."""
@@ -583,7 +624,17 @@ class IntegrationExecutor:
                 await client.aclose()
             except Exception as e:
                 logger.warning(f"Error closing httpx client for '{name}': {e}")
+        count = len(self._clients)
         self._clients.clear()
+        logger.info(f"Closed {count} httpx client(s)")
+
+    def client_stats(self) -> Dict[str, Any]:
+        """Return pool stats for health checks and admin dashboard."""
+        return {
+            "active_clients": len(self._clients),
+            "max_clients": self.MAX_CLIENTS,
+            "connected_systems": sorted(self._clients.keys()),
+        }
 
     # -----------------------------------------------------------------------
     # Template Substitution

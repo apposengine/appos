@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel
 
 from appos.engine.cache import RedisCache
-from appos.engine.context import ExecutionContext, set_execution_context
+from appos.engine.context import ExecutionContext, clear_execution_context, set_execution_context
 from appos.engine.errors import (
     AppOSDispatchError,
     AppOSError,
@@ -292,6 +292,10 @@ class APIExecutor:
             logger.exception(f"Unhandled error in API {api_name}: {e}")
             self._log_api_execution(api_def, request, 500, duration_ms, meta, error=str(e))
             return APIResponse(status_code=500, body={"error": "Internal server error"})
+
+        finally:
+            # Always clear the execution context after the request completes
+            clear_execution_context()
 
     # -----------------------------------------------------------------------
     # Authentication

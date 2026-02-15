@@ -279,6 +279,18 @@ class RedisCache:
             self._record_failure()
             return False
 
+    def close(self) -> None:
+        """Close the Redis connection and release resources."""
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._client = None
+        self._available = False
+        self._circuit_open = False
+        self._failure_count = 0
+
     @property
     def is_available(self) -> bool:
         return self._available and not self._circuit_open
