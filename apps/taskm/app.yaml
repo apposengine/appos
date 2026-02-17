@@ -1,0 +1,30 @@
+# Task Manager App Configuration
+# Loaded by: appos/engine/config.py → load_app_config()
+
+app:
+  name: "Task Manager"
+  short_name: "taskm"
+  version: "1.0.0"
+  description: "Demo task management app showcasing all AppOS object types"
+  groups:
+    - "dev_team"
+    - "managers"
+    - "taskm_admins"
+  db_connected_system: "taskm_database"
+  theme:
+    primary_color: "#6366F1"
+    font_family: "Inter"
+  environment: "dev"
+
+  security:
+    defaults:
+      logic:
+        groups:
+          - "dev_team"
+          - "managers"
+          - "taskm_admins"
+      ui:
+        groups:
+          - "dev_team"
+          - "managers"
+          - "taskm_admins"

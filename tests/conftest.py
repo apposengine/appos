@@ -60,28 +60,32 @@ def project_root(tmp_path):
         encoding="utf-8",
     )
 
-    # apps/crm/app.yaml
-    crm = root / "apps" / "crm"
-    crm.mkdir(parents=True)
-    (crm / "app.yaml").write_text(
+    # apps/taskm/app.yaml
+    taskm = root / "apps" / "taskm"
+    taskm.mkdir(parents=True)
+    (taskm / "app.yaml").write_text(
         "app:\n"
-        "  name: CRM App\n"
-        "  short_name: crm\n"
+        "  name: Task Manager\n"
+        "  short_name: taskm\n"
         "  version: '1.0.0'\n"
-        "  description: Customer Relationship Management\n"
+        "  description: Demo task management app\n"
         "  groups:\n"
-        "    - crm_users\n"
-        "    - crm_admins\n",
+        "    - dev_team\n"
+        "    - managers\n"
+        "    - taskm_admins\n",
         encoding="utf-8",
     )
 
     # App subdirectories
     for subdir in ("records", "rules", "constants", "processes", "steps",
                    "integrations", "web_apis", "interfaces", "pages",
-                   "translation_sets"):
-        d = crm / subdir
+                   "sites", "translation_sets", "connected_systems"):
+        d = taskm / subdir
         d.mkdir()
         (d / "__init__.py").write_text("")
+
+    # Runtime directory
+    (taskm / "runtime" / "documents").mkdir(parents=True)
 
     return root
 
@@ -125,8 +129,8 @@ def execution_context():
         user_id=1,
         username="test_user",
         user_type="basic",
-        user_groups={"crm_users", "crm_admins"},
-        app_name="crm",
+        user_groups={"dev_team", "managers", "taskm_admins"},
+        app_name="taskm",
         preferred_language="en",
     )
 

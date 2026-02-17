@@ -67,3 +67,7 @@ logging:
     flush_interval_ms: 100
     flush_batch_size: 50
     max_queue_size: 10000
+
+
+apps:
+  - taskm
