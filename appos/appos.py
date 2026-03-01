@@ -61,30 +61,18 @@ def _init_platform() -> None:
         config = load_platform_config("appos.yaml")
         _platform_config_ref = config
 
-        # Build a session factory from the platform DB config
-        import sqlalchemy
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
+        # Build a session factory via the canonical init function
+        from appos.db.session import init_platform_db
 
-        engine = create_engine(
-            config.database.url,
+        session_factory = init_platform_db(
+            db_url=config.database.url,
+            schema=config.database.db_schema,
             pool_size=config.database.pool_size,
             max_overflow=config.database.max_overflow,
             pool_timeout=config.database.pool_timeout,
             pool_recycle=config.database.pool_recycle,
             pool_pre_ping=config.database.pool_pre_ping,
         )
-
-        # Set search_path for the configured schema
-        schema = config.database.db_schema
-        if schema:
-            @sqlalchemy.event.listens_for(engine, "connect")
-            def set_search_path(dbapi_conn, connection_record):
-                cursor = dbapi_conn.cursor()
-                cursor.execute(f'SET search_path TO "{schema}", public')
-                cursor.close()
-
-        session_factory = sessionmaker(bind=engine)
         _session_factory_ref = session_factory
 
         # Create and start the runtime
@@ -154,6 +142,7 @@ def _import_app_modules(app_name: str, app_path: Path) -> None:
         "integrations",
         "web_apis",
         "processes",
+        "steps",
         "interfaces",
         "pages",
         "sites",

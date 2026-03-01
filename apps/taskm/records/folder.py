@@ -4,8 +4,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-import appos  # noqa: F401 — auto-injects decorators into builtins
-
 
 @record
 class Folder(BaseModel):

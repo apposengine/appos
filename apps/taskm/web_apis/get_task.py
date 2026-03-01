@@ -1,5 +1,4 @@
 """Web API — GET /tasks/{task_id} with API key auth and rate limiting."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @web_api(

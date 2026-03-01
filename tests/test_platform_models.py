@@ -7,7 +7,6 @@ from appos.db.platform_models import (
     App,
     ConnectedSystem,
     DependencyChange,
-    EventLog,
     Group,
     LoginAuditLog,
     ObjectPermission,
@@ -23,7 +22,7 @@ from appos.db.base import Base, AuditMixin, SoftDeleteMixin, EngineRegistry
 
 
 class TestModelTableNames:
-    """Verify all 16 platform tables have correct __tablename__."""
+    """Verify all 15 platform tables have correct __tablename__."""
 
     def test_app(self):
         assert App.__tablename__ == "apps"
@@ -64,9 +63,6 @@ class TestModelTableNames:
     def test_scheduled_trigger(self):
         assert ScheduledTrigger.__tablename__ == "scheduled_triggers"
 
-    def test_event_log(self):
-        assert EventLog.__tablename__ == "event_log"
-
 
 class TestModelColumns:
     """Verify key columns exist on models."""
@@ -95,14 +91,6 @@ class TestModelColumns:
         assert "process_ref" in cols
         assert "status" in cols
         assert "started_at" in cols
-
-    def test_event_log_has_key_columns(self):
-        cols = {c.name for c in EventLog.__table__.columns}
-        assert "app_name" in cols
-        assert "event_type" in cols
-        assert "severity" in cols
-        assert "payload" in cols
-        assert "correlation_id" in cols
 
     def test_dependency_change_has_key_columns(self):
         cols = {c.name for c in DependencyChange.__table__.columns}

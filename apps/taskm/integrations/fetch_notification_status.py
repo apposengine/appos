@@ -1,5 +1,4 @@
 """Outbound integration — fetch notification status via GET."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @integration(

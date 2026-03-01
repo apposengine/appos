@@ -1,5 +1,4 @@
 """Database Connected System — PostgreSQL with pool config."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @connected_system(

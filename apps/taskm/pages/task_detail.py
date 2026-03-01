@@ -1,5 +1,4 @@
 """Task detail page — dynamic route with path parameter."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @page(

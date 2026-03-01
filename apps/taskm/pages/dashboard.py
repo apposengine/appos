@@ -1,5 +1,4 @@
 """Dashboard page — landing page with on_load data rule."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @page(

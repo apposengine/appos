@@ -1,5 +1,4 @@
 """Outbound integration — send task notification via REST API."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @integration(

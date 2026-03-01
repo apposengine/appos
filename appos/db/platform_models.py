@@ -1,7 +1,7 @@
 """
 AppOS Platform Models — All SQLAlchemy models for the appos_core database.
 
-Tables defined here (16 platform tables):
+Tables defined here (15 platform tables):
 1.  users                   — User accounts (basic/system_admin/service_account)
 2.  groups                  — Access control groups
 3.  user_groups             — User ↔ Group junction
@@ -17,7 +17,9 @@ Tables defined here (16 platform tables):
 13. platform_config         — Runtime-editable settings
 14. scheduled_tasks         — Celery Beat schedule
 15. login_audit_log         — Login attempt audit trail
-16. event_log               — Custom business event logging (Tier 2)
+
+Note: event_log is NOT a platform table — it is per-app and auto-generated
+into each app's own Connected System database. See AppOS_Database_Design.md §3.
 
 Matches AppOS_Database_Design.md v1.0 and AppOS_Design.md v2.1 §5.
 """
@@ -457,48 +459,3 @@ class LoginAuditLog(Base):
     user_agent = Column(Text, nullable=True)
     failure_reason = Column(String(100), nullable=True)
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
-
-
-# ---------------------------------------------------------------------------
-# 16. Event Log (per-app custom business event logging)
-# ---------------------------------------------------------------------------
-
-class EventLog(Base):
-    """
-    Custom business event logging table.
-
-    Apps write events here via engine.log_event() for auditing,
-    compliance, and business intelligence. Tier 2 (DB) logging.
-
-    Design ref: AppOS_Design.md §14 (Tier 2: App Runtime Logs → Database)
-    """
-    __tablename__ = "event_log"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    app_name = Column(String(50), nullable=False, index=True)
-    event_type = Column(String(100), nullable=False, index=True)
-    event_name = Column(String(200), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    actor_username = Column(String(100), nullable=True)
-    object_ref = Column(String(255), nullable=True, index=True)
-    record_type = Column(String(100), nullable=True)
-    record_id = Column(Integer, nullable=True)
-    payload = Column(JSON, default=dict, nullable=False)
-    severity = Column(String(20), default="info", nullable=False)
-    correlation_id = Column(String(50), nullable=True, index=True)
-    created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-        index=True,
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            "severity IN ('debug', 'info', 'warning', 'error', 'critical')",
-            name="ck_eventlog_severity",
-        ),
-        Index("idx_el_app_type", "app_name", "event_type"),
-        Index("idx_el_app_created", "app_name", "created_at"),
-    )

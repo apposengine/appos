@@ -1,5 +1,4 @@
 """TaskList interface — DataTable with search, filter, pagination."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 from apps.taskm.interfaces.components import Button, DataTable
 
 

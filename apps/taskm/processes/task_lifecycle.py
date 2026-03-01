@@ -1,5 +1,4 @@
 """Task lifecycle process — full multi-step orchestration showcasing all features."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @process(

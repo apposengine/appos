@@ -1,5 +1,4 @@
 """TaskCreateForm interface — form for creating new tasks."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 from apps.taskm.interfaces.components import Field, Form
 
 

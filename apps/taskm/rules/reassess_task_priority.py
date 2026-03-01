@@ -1,5 +1,4 @@
 """Record event hook — re-evaluate task priority on Task.on_update."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @expression_rule(

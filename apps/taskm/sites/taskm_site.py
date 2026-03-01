@@ -1,5 +1,4 @@
 """TaskManager site — collection of pages forming the navigable app."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @site(name="TaskManager")

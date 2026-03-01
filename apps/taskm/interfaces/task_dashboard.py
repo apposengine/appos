@@ -1,5 +1,4 @@
 """TaskDashboard interface — custom composite layout with Cards + DataTable."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 from apps.taskm.interfaces.components import Card, DataTable, Layout, Metric, Row
 
 

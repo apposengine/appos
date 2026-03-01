@@ -1,5 +1,4 @@
 """Query rule — fetch overdue tasks for a project."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @expression_rule(

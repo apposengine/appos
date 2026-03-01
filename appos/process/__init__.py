@@ -1,4 +1,7 @@
-"""AppOS Process Engine — Celery-based process/step execution."
+"""AppOS Process Engine — Celery-based process/step execution.
+
+Provides the ProcessExecutor, Celery helpers, and scheduler singletons.
+"""
 
 from appos.process.executor import (  # noqa: F401
     ProcessExecutor,
@@ -30,4 +33,4 @@ __all__ = [
     "init_scheduler",
     "get_event_registry",
     "get_schedule_registry",
-]""
+]

@@ -1,5 +1,4 @@
 """Web API — POST /tasks with OAuth2 auth, triggers process."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @web_api(

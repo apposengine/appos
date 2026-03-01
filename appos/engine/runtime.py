@@ -195,6 +195,10 @@ class CentralizedRuntime:
         self.health_service = HealthCheckService()
         self._register_health_checks()
 
+        # 12. Process executor — initialize now so it holds the correct DB factory
+        from appos.process.executor import init_process_executor
+        init_process_executor(db_session_factory=self._db_session_factory)
+
         self._started = True
         log(log_system_event("platform_started", details={"subsystems": self._subsystem_status()}))
         logger.info("AppOS Runtime Engine started successfully")
@@ -565,7 +569,7 @@ class CentralizedRuntime:
     # -----------------------------------------------------------------------
 
     def create_monthly_partitions(
-        self, months_ahead: int = 3, schema: str = "public"
+        self, months_ahead: int = 3, schema: str = "appOS"
     ) -> List[str]:
         """
         Create monthly partitions for process_instances and

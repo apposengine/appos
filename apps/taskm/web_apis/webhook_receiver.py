@@ -1,5 +1,4 @@
 """Web API — POST /webhooks/events for inbound webhook receiver."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @web_api(

@@ -4,8 +4,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-import appos  # noqa: F401 — auto-injects decorators into builtins
-
 
 @record
 class Comment(BaseModel):

@@ -1,5 +1,4 @@
 """REST API Connected System — Notification Service with API Key auth."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @connected_system(

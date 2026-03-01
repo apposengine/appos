@@ -1,5 +1,4 @@
 """Task creation page."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @page(

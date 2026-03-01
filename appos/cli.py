@@ -156,27 +156,19 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"  Ensure PostgreSQL is running and database '{config.database.name}' exists.")
         return 1
 
-    # 3. Create schema and tables
-    from appos.db.base import Base
-
+    # 3. Create schema and tables via the canonical init function
     schema_name = config.database.db_schema
     try:
-        from sqlalchemy import text as sa_text
+        from appos.db.session import init_platform_db
+        from appos.db.base import engine_registry as _engine_registry
 
-        # Ensure the schema exists
-        with engine.connect() as conn:
-            conn.execute(sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
-            conn.commit()
+        init_platform_db(
+            db_url=db_url,
+            schema=schema_name,
+            create_tables=True,
+        )
+        engine = _engine_registry.get("appos_core")
         print(f"[OK] Schema '{schema_name}' ready")
-
-        # Set search_path so all tables are created in the target schema
-        @sqlalchemy.event.listens_for(engine, "connect")
-        def set_search_path(dbapi_conn, connection_record):
-            cursor = dbapi_conn.cursor()
-            cursor.execute(f'SET search_path TO "{schema_name}", public')
-            cursor.close()
-
-        Base.metadata.create_all(engine)
         print("[OK] Database tables created")
     except Exception as e:
         print(f"[ERROR] Failed to create tables: {e}")

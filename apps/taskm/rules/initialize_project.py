@@ -1,5 +1,4 @@
 """Record event hook — initialize a newly created Project."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @expression_rule(

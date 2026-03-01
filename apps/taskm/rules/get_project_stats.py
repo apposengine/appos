@@ -1,5 +1,4 @@
 """Aggregation rule — compute project-level task statistics."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @expression_rule(

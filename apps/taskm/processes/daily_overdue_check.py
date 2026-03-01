@@ -1,5 +1,4 @@
 """Scheduled process — daily scan for overdue tasks."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @process(

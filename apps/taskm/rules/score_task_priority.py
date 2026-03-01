@@ -1,5 +1,4 @@
 """Scoring rule — calculate numeric priority score (0-100) for a task."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @expression_rule(

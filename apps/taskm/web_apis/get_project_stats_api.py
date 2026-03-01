@@ -1,5 +1,4 @@
 """Web API — GET /projects/{project_id}/stats with rate limiting."""
-import appos  # noqa: F401 — auto-injects decorators into builtins
 
 
 @web_api(

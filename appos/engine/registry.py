@@ -180,6 +180,13 @@ class ObjectRegistryManager:
         """
         Scan an app directory and register all discovered objects.
 
+        This is a METADATA-ONLY scan — modules are NOT imported, so decorator
+        handlers are NOT set (``handler`` field will be ``None``).  Objects
+        registered this way are suitable for lookup/introspection but cannot
+        be dispatched.  The production runtime uses import-based discovery
+        (``appos.py: _import_app_modules``) instead, which fires decorators
+        and populates handlers.
+
         Args:
             app_name: App short name (e.g., "crm").
             app_path: Path to the app directory (e.g., Path("apps/crm")).
@@ -199,7 +206,9 @@ class ObjectRegistryManager:
             "web_apis": "web_api",
             "interfaces": "interface",
             "pages": "page",
+            "sites": "site",
             "translation_sets": "translation_set",
+            "connected_systems": "connected_system",
         }
 
         for dir_name, obj_type in dir_to_type.items():
